@@ -1042,6 +1042,214 @@ function renderPrint(){
   if(state.wins||state.weekNote){html+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">`;if(state.wins)html+=`<div style="border:1px solid #ddd;border-radius:5px;padding:8px;"><div style="font-weight:800;font-size:10px;margin-bottom:3px;color:#3a2a00;">🏆 WINS</div><div style="font-size:9px;color:#444;line-height:1.5;white-space:pre-wrap;">${escHtml(state.wins)}</div></div>`;if(state.weekNote)html+=`<div style="border:1px solid #ddd;border-radius:5px;padding:8px;"><div style="font-weight:800;font-size:10px;margin-bottom:3px;color:#3a2a00;">📝 NOTES</div><div style="font-size:9px;color:#444;line-height:1.5;white-space:pre-wrap;">${escHtml(state.weekNote)}</div></div>`;html+=`</div>`;}
   document.getElementById("print-area").innerHTML=html;
 }
+// ════════════════════════════════════════════════════════
+// NOTIFICATIONS & SETTINGS
+// ════════════════════════════════════════════════════════
+function checkNotifPermission(){
+  if(!("Notification" in window)){updatePermissionUI("unsupported");return;}
+  updatePermissionUI(Notification.permission);
+}
+function updatePermissionUI(status){
+  const bar=document.getElementById("notif-status-bar");
+  const btn=document.getElementById("notif-perm-btn");
+  if(!bar)return;
+  if(status==="granted"){bar.className="notif-status granted";bar.textContent="✅ Notifications enabled";btn.textContent="🔔 Active";btn.style.opacity=".6";btn.onclick=null;}
+  else if(status==="denied"){bar.className="notif-status denied";bar.textContent="❌ Notifications blocked — enable in browser settings";btn.textContent="🔕 Blocked";btn.style.opacity=".6";btn.onclick=null;}
+  else if(status==="unsupported"){bar.className="notif-status denied";bar.textContent="❌ Not supported in this browser";if(btn)btn.style.display="none";}
+  else{bar.className="notif-status default";bar.textContent="⚠️ Permission not granted yet";btn.textContent="🔔 ENABLE NOTIFICATIONS";btn.style.opacity="1";btn.onclick=window.requestNotifPermission;}
+}
+window.requestNotifPermission=async function(){
+  if(!("Notification" in window)){showToast("Notifications not supported","❌");return;}
+  const result=await Notification.requestPermission();
+  updatePermissionUI(result);
+  if(result==="granted"){showToast("Notifications enabled!","✅");scheduleAllNotifications();}
+  else showToast("Notifications blocked by browser","⚠️");
+};
+function buildBriefingContent(){
+  const tasks=state.tasks||[],projects=state.projects||[],today=getTodayIndex(),lines=[];
+  if(notifSettings.alertSummary){
+    const ov=tasks.filter(t=>t.overdue&&!t.done);
+    const td=tasks.filter(t=>t.day===today&&!t.done);
+    if(ov.length)lines.push("⚠️ "+ov.length+" overdue task"+(ov.length>1?"s":""));
+    if(td.length)lines.push("📅 "+td.length+" task"+(td.length!==1?"s":"")+" remaining today");
+    const bp=projects.filter(p=>(p.pct||0)<100).sort((a,b)=>(a.pct||0)-(b.pct||0))[0];
+    if(bp)lines.push("🚀 \""+bp.title+"\" at "+(bp.pct||0)+"%");
+    const old=tasks.filter(t=>!t.done).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0))[0];
+    if(old)lines.push("📋 Oldest: \""+old.text+"\"");
+  } else {
+    if(notifSettings.alertOverdueTask){const ov=tasks.filter(t=>t.overdue&&!t.done).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));if(ov.length)lines.push("⚠️ Overdue: \""+ov[0].text+"\"");}
+    if(notifSettings.alertOverdueProj){const bp=projects.filter(p=>(p.pct||0)<100).sort((a,b)=>(a.pct||0)-(b.pct||0))[0];if(bp)lines.push("🚀 Behind: \""+bp.title+"\" ("+(bp.pct||0)+"%)");}
+    if(notifSettings.alertOldestTask){const old=tasks.filter(t=>!t.done).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0))[0];if(old)lines.push("📋 Oldest: \""+old.text+"\"");}
+    if(notifSettings.alertTodayCount){const n=tasks.filter(t=>t.day===today&&!t.done).length;lines.push("📅 Today: "+n+" task"+(n!==1?"s":"")+" remaining");}
+  }
+  return lines.length?lines.join("\n"):"All clear, pilot! 🎖";
+}
+function fireNotification(title,body){
+  if(Notification.permission!=="granted")return;
+  const n=new Notification(title,{body,tag:"gflow-briefing"});
+  n.onclick=()=>{window.focus();n.close();};
+  const gear=document.getElementById("gear-btn");
+  if(gear){gear.classList.add("bell-ring");setTimeout(()=>gear.classList.remove("bell-ring"),700);}
+}
+function clearAllNotifTimers(){
+  notifTimers.forEach(id=>clearInterval(id));
+  scheduledTimes.forEach(id=>clearTimeout(id));
+  notifTimers=[];scheduledTimes=[];
+}
+function scheduleAllNotifications(){
+  clearAllNotifTimers();
+  if(Notification.permission!=="granted")return;
+  if(notifSettings.interval30)notifTimers.push(setInterval(()=>fireNotification("✈️ G-Flow Briefing",buildBriefingContent()),30*60*1000));
+  if(notifSettings.interval1hr)notifTimers.push(setInterval(()=>fireNotification("✈️ G-Flow Briefing",buildBriefingContent()),60*60*1000));
+  if(notifSettings.interval2hr)notifTimers.push(setInterval(()=>fireNotification("✈️ G-Flow Briefing",buildBriefingContent()),2*60*60*1000));
+  (notifSettings.specificTimes||[]).forEach(t=>scheduleTimeNotification(t));
+}
+function scheduleTimeNotification(timeStr){
+  const parts=timeStr.split(":");
+  const h=parseInt(parts[0]),m=parseInt(parts[1]);
+  const now=new Date(),target=new Date();
+  target.setHours(h,m,0,0);
+  if(target<=now)target.setDate(target.getDate()+1);
+  const tid=setTimeout(()=>{
+    fireNotification("✈️ G-Flow Scheduled Briefing",buildBriefingContent());
+    notifTimers.push(setInterval(()=>fireNotification("✈️ G-Flow Scheduled Briefing",buildBriefingContent()),24*60*60*1000));
+  },target-now);
+  scheduledTimes.push(tid);
+}
+window.sendTestNotification=function(){
+  if(Notification.permission!=="granted"){showToast("Enable notifications first!","⚠️");return;}
+  fireNotification("✈️ G-Flow Test Briefing",buildBriefingContent());
+  showToast("Test notification sent!","🔔");
+};
+window.openSettings=function(){
+  updateSettingsUI();
+  checkNotifPermission();
+  document.getElementById("settings-modal").style.display="flex";
+};
+window.closeSettings=function(){document.getElementById("settings-modal").style.display="none";};
+window.switchSettingsTab=function(tab,btn){
+  document.querySelectorAll(".settings-section").forEach(el=>el.classList.remove("active"));
+  document.querySelectorAll(".stab").forEach(el=>el.classList.remove("active"));
+  document.getElementById("stab-"+tab).classList.add("active");
+  if(btn)btn.classList.add("active");
+};
+window.toggleNotifSetting=function(key){notifSettings[key]=!notifSettings[key];updateSettingsUI();};
+function updateSettingsUI(){
+  const checks={"chk-30min":"interval30","chk-1hr":"interval1hr","chk-2hr":"interval2hr","chk-overdue-task":"alertOverdueTask","chk-overdue-proj":"alertOverdueProj","chk-oldest-task":"alertOldestTask","chk-today-count":"alertTodayCount","chk-summary":"alertSummary"};
+  Object.entries(checks).forEach(([elId,key])=>{const el=document.getElementById(elId);if(el)el.classList.toggle("checked",!!notifSettings[key]);});
+  renderTimeInputs();
+  const hasAny=notifSettings.interval30||notifSettings.interval1hr||notifSettings.interval2hr||(notifSettings.specificTimes||[]).length>0;
+  const gear=document.getElementById("gear-btn");
+  if(gear)gear.classList.toggle("has-notif",hasAny);
+}
+function renderTimeInputs(){
+  const container=document.getElementById("time-inputs");
+  const addBtn=document.getElementById("add-time-btn");
+  if(!container)return;
+  const times=notifSettings.specificTimes||[];
+  container.innerHTML="";
+  times.forEach((t,i)=>{
+    const row=document.createElement("div");row.className="time-input-row";
+    row.innerHTML='<input type="time" value="'+t+'" onchange="updateTime('+i+',this.value)"/><button class="time-remove" onclick="removeTime('+i+')">×</button>';
+    container.appendChild(row);
+  });
+  if(addBtn)addBtn.style.display=times.length>=5?"none":"block";
+}
+window.addTimeInput=function(){
+  if(!notifSettings.specificTimes)notifSettings.specificTimes=[];
+  if(notifSettings.specificTimes.length>=5)return;
+  notifSettings.specificTimes.push("09:00");
+  renderTimeInputs();
+};
+window.removeTime=function(i){notifSettings.specificTimes.splice(i,1);renderTimeInputs();};
+window.updateTime=function(i,val){notifSettings.specificTimes[i]=val;};
+window.saveNotifSettings=async function(){
+  await persistNotifSettings();
+  scheduleAllNotifications();
+  showToast("Settings saved!","✅");
+  window.closeSettings();
+};
+window.saveDisplayName=async function(){
+  const name=document.getElementById("settings-display-name").value.trim();
+  if(!name||!currentUser)return;
+  try{
+    await updateProfile(currentUser,{displayName:name});
+    document.getElementById("pilot-name").textContent=name;
+    document.getElementById("pilot-name-mobile").textContent=name;
+    showToast("Display name updated!","✅");
+  }catch(e){showToast("Failed to update name","❌");}
+};
+
+// ── Fireworks ─────────────────────────────────────────────────────────────
+const canvas=document.getElementById("fw-canvas");
+const ctx=canvas.getContext("2d");
+let particles=[],fwRafId=null;
+function resizeCanvas(){canvas.width=window.innerWidth;canvas.height=window.innerHeight;}
+window.addEventListener("resize",resizeCanvas);resizeCanvas();
+class Particle{
+  constructor(x,y,color,type){
+    this.x=x;this.y=y;this.color=color;this.type=type;this.trail=[];
+    const a=Math.random()*Math.PI*2;
+    const spd={shell:2+Math.random()*5,sparkle:1+Math.random()*3,star:3+Math.random()*6};
+    const sp=spd[type]||3;
+    this.vx=Math.cos(a)*sp;this.vy=Math.sin(a)*sp-(type==="shell"?2:type==="star"?1:0);
+    this.life=1;
+    const dec={shell:.013+Math.random()*.015,sparkle:.025+Math.random()*.02,star:.009+Math.random()*.01};
+    this.decay=dec[type]||.015;
+    this.size=type==="shell"?3+Math.random()*3:type==="star"?2+Math.random()*4:1.5+Math.random()*2;
+    this.gravity=type==="star"?.06:type==="shell"?.08:.04;
+    if(type==="star")this.twinkle=Math.random()*Math.PI;
+  }
+  update(){
+    this.trail.push({x:this.x,y:this.y});
+    if(this.trail.length>6)this.trail.shift();
+    this.x+=this.vx;this.y+=this.vy;this.vy+=this.gravity;
+    this.vx*=.98;this.vy*=.98;this.life-=this.decay;
+    if(this.twinkle!=null)this.twinkle+=.2;
+  }
+  draw(){
+    if(this.life<=0)return;
+    const alpha=Math.max(0,this.life);
+    ctx.save();
+    const a2=this.twinkle!=null?alpha*(0.7+0.3*Math.sin(this.twinkle)):alpha;
+    ctx.globalAlpha=a2;ctx.fillStyle=this.color;ctx.shadowColor=this.color;ctx.shadowBlur=8;
+    ctx.beginPath();ctx.arc(this.x,this.y,this.size*alpha,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+}
+function launchFirework(x,y){
+  const pal=[["#ff6b6b","#ffd93d","#ff6bcb"],["#6bcbff","#6bffb8","#a78bfa"],["#ffd700","#ff8c00","#ffec00"],["#44ffaa","#44ddff","#aa44ff"]];
+  const colors=pal[Math.floor(Math.random()*pal.length)];
+  for(let i=0;i<80;i++)particles.push(new Particle(x,y,colors[i%colors.length],"shell"));
+  for(let i=0;i<30;i++)particles.push(new Particle(x,y,"#ffffff","sparkle"));
+}
+function launchMulti(count){
+  const cx=window.innerWidth,cy=window.innerHeight;
+  for(let i=0;i<count;i++)setTimeout(()=>launchFirework(cx*(0.15+Math.random()*.7),cy*(0.1+Math.random()*.5)),i*180);
+}
+function animFW(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  particles=particles.filter(p=>p.life>0);
+  particles.forEach(p=>{p.update();p.draw();});
+  if(particles.length>0)fwRafId=requestAnimationFrame(animFW);
+  else{ctx.clearRect(0,0,canvas.width,canvas.height);fwRafId=null;}
+}
+function triggerCelebration(level){
+  launchMulti([3,6,12][Math.min(level-1,2)]);
+  if(!fwRafId)fwRafId=requestAnimationFrame(animFW);
+}
+
+// Toast
+let toastTimer=null;
+function showToast(msg,emoji){
+  if(emoji===undefined)emoji="✅";
+  const t=document.getElementById("toast");
+  t.textContent=emoji+"  "+msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove("show"),3200);
+}
+
 setInterval(()=>{if(currentUser){runOverdueCheck();renderWeek();}},60000);
 </script>
 </body>
