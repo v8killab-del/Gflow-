@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Flight Deck: Kill the Apple Card</title>
+<style>
+:root{
+  --bg:#08111f; --panel:#101c2f; --panel2:#15253d; --text:#e9f2ff; --muted:#9db0c8;
+  --green:#38d27a; --yellow:#ffd166; --red:#ff5c7a; --blue:#5cc8ff; --line:#29425f;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:radial-gradient(circle at top,#132945,#08111f 60%);color:var(--text)}
+header{padding:22px 28px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:16px;align-items:center}
+h1{margin:0;font-size:24px;letter-spacing:.5px}
+.small{color:var(--muted);font-size:13px}
+.wrap{padding:22px;display:grid;grid-template-columns:1.15fr .85fr;gap:18px}
+.card{background:linear-gradient(180deg,var(--panel),#0c1728);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.metric{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:14px}
+.metric b{display:block;font-size:24px;margin-top:6px}
+.progress{height:20px;background:#06101d;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.bar{height:100%;width:0%;background:linear-gradient(90deg,var(--red),var(--yellow),var(--green));transition:.4s}
+.jarvis{font-size:18px;line-height:1.45;background:#06101d;border-left:5px solid var(--blue)}
+label{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}
+input,select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#071322;color:var(--text)}
+button{border:0;border-radius:12px;padding:10px 14px;background:var(--blue);color:#00111d;font-weight:700;cursor:pointer}
+button.secondary{background:#223954;color:var(--text)}
+button.danger{background:var(--red);color:white}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
+th{color:var(--muted);font-weight:600}
+.pill{padding:4px 9px;border-radius:999px;font-size:12px;font-weight:700}
+.good{background:rgba(56,210,122,.15);color:var(--green)}
+.warn{background:rgba(255,209,102,.15);color:var(--yellow)}
+.bad{background:rgba(255,92,122,.15);color:var(--red)}
+.formgrid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px;align-items:end}
+.catgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.footer{padding:14px 22px;color:var(--muted);font-size:12px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}.formgrid,.catgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>✈️ Flight Deck: Mission “Kill the Apple Card”</h1>
+    <div class="small">A debt payoff command center for Mr. Rivera</div>
+  </div>
+  <button onclick="exportData()">Export Backup</button>
+</header>
+
+<div class="wrap">
+  <main>
+    <section class="card">
+      <div class="grid">
+        <div class="metric"><span class="small">Current Balance</span><b id="balanceOut">$13,032.96</b></div>
+        <div class="metric"><span class="small">Monthly Savings Target</span><b id="savingsOut">$850</b></div>
+        <div class="metric"><span class="small">Commander Score</span><b id="scoreOut">100</b></div>
+        <div class="metric"><span class="small">Mission Status</span><b id="statusOut">GREEN</b></div>
+      </div>
+      <br>
+      <label>Debt Destroyed Progress</label>
+      <div class="progress"><div class="bar" id="progressBar"></div></div>
+      <p class="small" id="progressText"></p>
+    </section>
+
+    <section class="card jarvis" style="margin-top:18px">
+      <b>JARVIS STATUS:</b>
+      <div id="jarvisText">Systems online. Awaiting spending data.</div>
+    </section>
+
+    <section class="card" style="margin-top:18px">
+      <h2>Mission Log</h2>
+      <div class="formgrid">
+        <div><label>Date</label><input id="dateIn" type="date"></div>
+        <div><label>Vendor</label><input id="vendorIn" placeholder="Amazon, DoorDash, WW..."></div>
+        <div><label>Category</label><select id="catIn">
+          <option>Dining</option><option>Amazon</option><option>Subscription</option><option>Convenience</option>
+          <option>Gas</option><option>Groceries</option><option>Entertainment</option><option>Payment</option><option>Other</option>
+        </select></div>
+        <div><label>Amount</label><input id="amtIn" type="number" step="0.01" placeholder="0.00"></div>
+        <button onclick="addTxn()">Add</button>
+      </div>
+      <br>
+      <table>
+        <thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Amount</th><th>Score</th><th></th></tr></thead>
+        <tbody id="txnBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <aside>
+    <section class="card">
+      <h2>Mission Settings</h2>
+      <div class="catgrid">
+        <div><label>Starting Balance</label><input id="startBalance" type="number" step="0.01"></div>
+        <div><label>Current Balance</label><input id="currentBalance" type="number" step="0.01"></div>
+        <div><label>APR %</label><input id="apr" type="number" step="0.01"></div>
+      </div>
+      <br>
+      <div class="catgrid">
+        <div><label>Dining Target</label><input id="targetDining" type="number"></div>
+        <div><label>Amazon Target</label><input id="targetAmazon" type="number"></div>
+        <div><label>Convenience Target</label><input id="targetConvenience" type="number"></div>
+      </div>
+      <br>
+      <button onclick="saveSettings()">Save Settings</button>
+      <button class="secondary" onclick="seedSample()">Load Sample</button>
+    </section>
+
+    <section class="card" style="margin-top:18px">
+      <h2>Category Radar</h2>
+      <table>
+        <tbody id="catBody"></tbody>
+      </table>
+    </section>
+
+    <section class="card" style="margin-top:18px">
+      <h2>Cancel Checklist</h2>
+      <div id="checklist"></div>
+    </section>
+  </aside>
+</div>
+
+<div class="footer">Data is saved only in this browser using localStorage.</div>
+
+<script>
+const defaults = {
+  startBalance:13032.96,currentBalance:13032.96,apr:24.99,
+  targetDining:400,targetAmazon:150,targetConvenience:50,
+  checks:["WW","Stamps.com","Venice AI","Prime Video Channels","Apple subscriptions","Navigraph","Roblox Premium","No DoorDash July"],
+  txns:[]
+};
+let data = JSON.parse(localStorage.getItem("flightDeckAppleCard")||"null") || defaults;
+
+function money(n){return "$"+Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
+function scoreTxn(t){
+  if(t.category==="Payment") return 8;
+  if(t.category==="Subscription") return -3;
+  if(t.category==="Amazon") return -2;
+  if(t.category==="Dining") return t.vendor.toLowerCase().includes("doordash") ? -5 : -2;
+  if(t.category==="Convenience") return -2;
+  return 0;
+}
+function render(){
+  ["startBalance","currentBalance","apr","targetDining","targetAmazon","targetConvenience"].forEach(id=>document.getElementById(id).value=data[id]);
+  document.getElementById("balanceOut").textContent=money(data.currentBalance);
+  let saved = Math.max(0, data.startBalance - data.currentBalance);
+  let pct = data.startBalance ? Math.min(100, saved/data.startBalance*100) : 0;
+  document.getElementById("progressBar").style.width=pct+"%";
+  document.getElementById("progressText").textContent=`${money(saved)} destroyed of ${money(data.startBalance)}. ${pct.toFixed(1)}% mission complete.`;
+  let monthCats={Dining:0,Amazon:0,Convenience:0,Subscription:0,Payment:0,Other:0};
+  let score=100;
+  data.txns.forEach(t=>{monthCats[t.category]=(monthCats[t.category]||0)+Number(t.amount); score+=scoreTxn(t);});
+  score=Math.max(0,Math.min(125,score));
+  document.getElementById("scoreOut").textContent=score;
+  let status=score>=85?"GREEN":score>=65?"YELLOW":"RED";
+  document.getElementById("statusOut").textContent=status;
+  document.getElementById("statusOut").style.color=status==="GREEN"?"var(--green)":status==="YELLOW"?"var(--yellow)":"var(--red)";
+  document.getElementById("jarvisText").textContent = jarvis(score, monthCats);
+  document.getElementById("savingsOut").textContent="$850";
+
+  let tbody=document.getElementById("txnBody"); tbody.innerHTML="";
+  data.txns.slice().reverse().forEach((t,idx)=>{
+    let realIdx=data.txns.length-1-idx;
+    tbody.innerHTML+=`<tr><td>${t.date}</td><td>${t.vendor}</td><td>${t.category}</td><td>${money(t.amount)}</td><td>${scoreTxn(t)}</td><td><button class="danger" onclick="delTxn(${realIdx})">X</button></td></tr>`;
+  });
+
+  let cats=[
+    ["Dining",monthCats.Dining,data.targetDining],
+    ["Amazon",monthCats.Amazon,data.targetAmazon],
+    ["Convenience",monthCats.Convenience,data.targetConvenience],
+    ["Subscriptions",monthCats.Subscription,110],
+  ];
+  document.getElementById("catBody").innerHTML=cats.map(c=>{
+    let cls=c[1]<=c[2]?"good":c[1]<=c[2]*1.25?"warn":"bad";
+    return `<tr><td>${c[0]}</td><td>${money(c[1])}</td><td>Target ${money(c[2])}</td><td><span class="pill ${cls}">${cls.toUpperCase()}</span></td></tr>`
+  }).join("");
+
+  document.getElementById("checklist").innerHTML=data.checks.map((c,i)=>{
+    let done=localStorage.getItem("check_"+c)==="1";
+    return `<p><input type="checkbox" ${done?"checked":""} onchange="localStorage.setItem('check_${c}',this.checked?'1':'0')"> ${c}</p>`;
+  }).join("");
+  localStorage.setItem("flightDeckAppleCard",JSON.stringify(data));
+}
+function jarvis(score,cats){
+  if(score>=90) return "Excellent work, Mr. Rivera. Enemy debt is losing altitude. Maintain course and avoid Amazon airspace.";
+  if(cats.Dining>data.targetDining) return "Sir... restaurant spending has breached the perimeter. Recommend immediate countermeasure: sandwiches from home.";
+  if(cats.Amazon>data.targetAmazon) return "Amazon has achieved radar lock. Initiate 48-hour wait rule before further purchases.";
+  if(score<65) return "Warning. Mission status red. Spending velocity exceeds safe operating limits.";
+  return "Systems stable. Continue redirecting savings to principal. Victory remains achievable.";
+}
+function addTxn(){
+  let t={date:dateIn.value||new Date().toISOString().slice(0,10),vendor:vendorIn.value||"Unknown",category:catIn.value,amount:parseFloat(amtIn.value||0)};
+  data.txns.push(t);
+  vendorIn.value=""; amtIn.value="";
+  render();
+}
+function delTxn(i){data.txns.splice(i,1);render()}
+function saveSettings(){
+  ["startBalance","currentBalance","apr","targetDining","targetAmazon","targetConvenience"].forEach(id=>data[id]=parseFloat(document.getElementById(id).value||0));
+  render();
+}
+function seedSample(){
+  data.txns=[
+    {date:"2026-07-01",vendor:"WW",category:"Subscription",amount:24.44},
+    {date:"2026-07-02",vendor:"Amazon",category:"Amazon",amount:58.43},
+    {date:"2026-07-03",vendor:"DoorDash",category:"Dining",amount:65.48},
+    {date:"2026-07-05",vendor:"Stamps.com",category:"Subscription",amount:22.30},
+    {date:"2026-07-06",vendor:"Apple Card Payment",category:"Payment",amount:850}
+  ];
+  data.currentBalance=12182.96;
+  render();
+}
+function exportData(){
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="flight_deck_backup.json"; a.click();
+}
+document.getElementById("dateIn").value=new Date().toISOString().slice(0,10);
+render();
+</script>
+</body>
+</html>
